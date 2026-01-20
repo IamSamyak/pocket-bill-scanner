@@ -33,6 +33,11 @@
 
     let scanner = null;
     let locked = false;
+    let connected = false; // tracks first scan to hide QR section
+
+    const reader = document.getElementById("reader");
+    const scanButton = document.getElementById("scan-btn");
+    const status = document.getElementById("status");
 
     // --------------------------
     // Scan Function
@@ -40,9 +45,6 @@
     window.startScan = async () => {
       if (locked) return;
       locked = true;
-
-      const reader = document.getElementById("reader");
-      const status = document.getElementById("status");
 
       status.innerText = "📷 Opening camera...";
       reader.style.display = "block";
@@ -71,9 +73,19 @@
 
             status.innerText = "✅ Item added";
 
+            // Hide QR / Scan button after first item scanned
+            if (!connected) {
+              connected = true;
+              scanButton.style.display = "none";
+            }
+
             setTimeout(() => {
               locked = false;
-              status.innerText = "Tap Scan for next item";
+              if (!connected) {
+                status.innerText = "Tap Scan for next item";
+              } else {
+                status.innerText = "Device connected!";
+              }
             }, 1500);
           }
         );
@@ -90,7 +102,7 @@
     window.sendCommand = async (type) => {
       if (!sessionId) return;
       await set(ref(db, `instant_commands/${sessionId}`), { type, timestamp: Date.now() });
-      document.getElementById("status").innerText = `✅ Command "${type}" sent`;
+      status.innerText = `✅ Command "${type}" sent`;
     };
   </script>
 
@@ -107,7 +119,7 @@
   <h2>Instant Bill Scanner</h2>
 
   <!-- Scan Button -->
-  <button onclick="startScan()">📷 Scan Item</button>
+  <button id="scan-btn" onclick="startScan()">📷 Scan Item</button>
 
   <!-- Print / Save Buttons -->
   <div>
