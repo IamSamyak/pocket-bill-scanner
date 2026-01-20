@@ -5,15 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Instant Bill Scanner</title>
 
-  <!-- QR Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode"></script>
 
-  <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+    import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
-    // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
       authDomain: "testing-pocket-bill.firebaseapp.com",
@@ -27,7 +24,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Get session from URL
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session");
 
@@ -38,7 +34,9 @@
     let scanner = null;
     let locked = false;
 
-    // Start scanning
+    // --------------------------
+    // Scan Function
+    // --------------------------
     window.startScan = async () => {
       if (locked) return;
       locked = true;
@@ -49,7 +47,6 @@
       status.innerText = "📷 Opening camera...";
       reader.style.display = "block";
 
-      // Destroy old instance if exists
       if (scanner) {
         try { await scanner.clear(); } catch (_) {}
         scanner = null;
@@ -62,14 +59,11 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qrText) => {
-            // Stop scanner after reading
             await scanner.stop();
             await scanner.clear();
             scanner = null;
-
             reader.style.display = "none";
 
-            // Push scanned QR to Firebase
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qrText,
               timestamp: Date.now()
@@ -77,7 +71,6 @@
 
             status.innerText = "✅ Item added";
 
-            // Unlock after 1.5s delay
             setTimeout(() => {
               locked = false;
               status.innerText = "Tap Scan for next item";
@@ -90,47 +83,39 @@
         console.error(err);
       }
     };
+
+    // --------------------------
+    // Send Commands to Flutter
+    // --------------------------
+    window.sendCommand = async (type) => {
+      if (!sessionId) return;
+      await set(ref(db, `instant_commands/${sessionId}`), { type, timestamp: Date.now() });
+      document.getElementById("status").innerText = `✅ Command "${type}" sent`;
+    };
   </script>
 
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 16px;
-      background: #f7f7f7;
-    }
-
-    #reader {
-      width: 300px;
-      margin: 16px auto;
-      display: none;
-    }
-
-    button {
-      padding: 14px 22px;
-      font-size: 16px;
-      border-radius: 6px;
-      background: #4f46e5;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-
-    h2 {
-      margin-bottom: 16px;
-    }
-
-    #status {
-      margin-top: 12px;
-      font-weight: bold;
-    }
+    body { font-family: Arial, sans-serif; text-align: center; padding: 16px; background: #f7f7f7; }
+    #reader { width: 300px; margin: 16px auto; display: none; }
+    button { padding: 14px 22px; font-size: 16px; border-radius: 6px; background: #4f46e5; color: white; border: none; cursor: pointer; margin: 6px; }
+    h2 { margin-bottom: 16px; }
+    #status { margin-top: 12px; font-weight: bold; }
   </style>
 </head>
 
 <body>
   <h2>Instant Bill Scanner</h2>
+
+  <!-- Scan Button -->
   <button onclick="startScan()">📷 Scan Item</button>
 
+  <!-- Print / Save Buttons -->
+  <div>
+    <button onclick="sendCommand('print')">🖨 Print Bill</button>
+    <button onclick="sendCommand('save')">💾 Save Bill</button>
+  </div>
+
+  <!-- Scanner and Status -->
   <div id="reader"></div>
   <div id="status">Ready to scan</div>
 </body>
