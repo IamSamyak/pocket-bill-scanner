@@ -18,7 +18,7 @@
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     // -----------------------------------
-    // Firebase Config (PUBLIC – OK)
+    // Firebase Config (PUBLIC – SAFE)
     // -----------------------------------
     const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
@@ -40,28 +40,30 @@
     const sessionId = params.get("session");
     const token = params.get("token");
 
-    const THREE_DAYS_MS = 259200000;
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
     // -----------------------------------
-    // UI HELPERS
+    // UI BLOCKER
     // -----------------------------------
     function blockAccess(message) {
       document.body.innerHTML = `
-        <h2 style="color:red;">❌ Access Denied</h2>
-        <p>${message}</p>
+        <div style="margin-top:60px;text-align:center">
+          <h2 style="color:red;">❌ Access Denied</h2>
+          <p>${message}</p>
+        </div>
       `;
       throw new Error(message);
     }
 
     // -----------------------------------
-    // HARD BLOCK IF PARAMS MISSING
+    // HARD BLOCK
     // -----------------------------------
     if (!sessionId || !token) {
-      blockAccess("Invalid or missing session token.");
+      blockAccess("Missing or invalid session token.");
     }
 
     // -----------------------------------
-    // VERIFY SESSION + TOKEN + EXPIRY
+    // VERIFY SESSION
     // -----------------------------------
     const sessionRef = ref(db, `instant_sessions/${sessionId}`);
     const snap = await get(sessionRef);
@@ -116,7 +118,7 @@
             scanner = null;
             reader.style.display = "none";
 
-            // 🔐 SECURE WRITE (TOKEN REQUIRED)
+            // 🔐 SECURE WRITE (TOKEN MATCHED BY RULES)
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qrText,
               token: token,
@@ -146,7 +148,7 @@
     };
 
     // -----------------------------------
-    // SEND COMMANDS (Flutter only reads)
+    // SEND COMMANDS (ONE-WAY)
     // -----------------------------------
     window.sendCommand = async (type) => {
       await set(ref(db, `instant_commands/${sessionId}`), {
@@ -154,7 +156,7 @@
         createdAt: Date.now()
       });
 
-      status.innerText = `✅ Command "${type}" sent`;
+      status.innerText = `✅ "${type}" sent`;
     };
   </script>
 
@@ -191,10 +193,10 @@
 <body>
   <h2>Instant Bill Scanner</h2>
 
-  <!-- Scan Button -->
+  <!-- Scan -->
   <button id="scan-btn" onclick="startScan()">📷 Scan Item</button>
 
-  <!-- Print / Save -->
+  <!-- Commands -->
   <div>
     <button onclick="sendCommand('print')">🖨 Print Bill</button>
     <button onclick="sendCommand('save')">💾 Save Bill</button>
