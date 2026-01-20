@@ -5,15 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Instant Bill Scanner</title>
 
-  <!-- QR Scanner -->
   <script src="https://unpkg.com/html5-qrcode"></script>
 
-  <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
     import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
-    // 🔥 Replace with your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
       authDomain: "testing-pocket-bill.firebaseapp.com",
@@ -27,28 +24,31 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // -------- SESSION ID FROM URL --------
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session");
 
     if (!sessionId) {
-      alert("Invalid session. Cannot scan items.");
+      alert("Invalid session");
     }
 
     let scanner;
-    let isScanning = false;
+    let locked = false;
 
-    // ------------------ FUNCTIONS ------------------
-    window.startScan = async function() {
-      if (!sessionId || isScanning) return;
+    // 🔐 Notify Flutter that scanner opened
+    await set(ref(db, `instant_sessions/${sessionId}`), {
+      active: true,
+      connectedAt: Date.now()
+    });
 
-      isScanning = true;
+    window.startScan = async () => {
+      if (locked) return;
+      locked = true;
 
-      const status = document.getElementById("status");
       const reader = document.getElementById("reader");
+      const status = document.getElementById("status");
 
       reader.style.display = "block";
-      status.innerText = "📷 Starting camera...";
+      status.innerText = "📷 Scanning...";
 
       scanner = new Html5Qrcode("reader");
 
@@ -57,37 +57,26 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qr) => {
-            // 1️⃣ Prevent multiple pushes for same scan
-            scanner.stop();
+            await scanner.stop();
             reader.style.display = "none";
 
-            // Push QR to Firebase using QR itself as key
-            await set(ref(db, `instant_scans/${sessionId}/${qr}`), {
-              qr: qr,
-              timestamp: Date.now()
-            });
+            await set(
+              ref(db, `instant_scans/${sessionId}/${qr}`),
+              { qr, timestamp: Date.now() }
+            );
 
-            status.innerText = "✅ Item added.";
+            status.innerText = "✅ Item added";
 
-            // 2️⃣ Wait 1.5 seconds before allowing next scan
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            status.innerText = "📷 Press 'Start Scan' for next item.";
-            isScanning = false;
+            // ⏳ 1.5 second delay
+            setTimeout(() => {
+              locked = false;
+              status.innerText = "Tap Scan for next item";
+            }, 1500);
           }
         );
-      } catch (err) {
-        status.innerText = "❌ Camera access denied. Please allow camera.";
-        console.error(err);
-        isScanning = false;
-      }
-    };
-
-    window.stopScan = async function() {
-      if (scanner) {
-        await scanner.stop();
-        document.getElementById("reader").style.display = "none";
-        document.getElementById("status").innerText = "⏹ Scanner stopped.";
-        isScanning = false;
+      } catch (e) {
+        locked = false;
+        status.innerText = "❌ Camera permission denied";
       }
     };
   </script>
@@ -100,10 +89,6 @@
       background: #f7f7f7;
     }
 
-    h2 {
-      margin-bottom: 12px;
-    }
-
     #reader {
       width: 300px;
       margin: 16px auto;
@@ -113,36 +98,19 @@
     button {
       padding: 14px 22px;
       font-size: 16px;
-      border: none;
       border-radius: 6px;
       background: #4f46e5;
       color: white;
+      border: none;
       cursor: pointer;
-      margin: 8px;
-    }
-
-    button:active {
-      transform: scale(0.97);
-    }
-
-    #status {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #333;
     }
   </style>
 </head>
 
 <body>
   <h2>Instant Bill Scanner</h2>
-
-  <button onclick="startScan()">📷 Start Scan</button>
-  <button onclick="stopScan()">⏹ Stop Scan</button>
-
+  <button onclick="startScan()">📷 Scan Item</button>
   <div id="reader"></div>
-
-  <div id="status">
-    Tap "Start Scan" and allow camera permission
-  </div>
+  <div id="status">Ready to scan</div>
 </body>
 </html>
