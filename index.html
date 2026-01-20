@@ -10,17 +10,11 @@
 
   <!-- Firebase -->
   <script type="module">
-    import { initializeApp } from
-      "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      push
-    } from
-      "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
-    // 🔥 REPLACE WITH YOUR FIREBASE CONFIG
-   const firebaseConfig = {
+    // 🔥 Replace with your Firebase config
+    const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
       authDomain: "testing-pocket-bill.firebaseapp.com",
       databaseURL: "https://testing-pocket-bill-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -35,15 +29,18 @@
 
     // -------- SESSION ID FROM URL --------
     const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session");
+    let sessionId = params.get("session");
 
     if (!sessionId) {
-      alert("Invalid session. Cannot scan items.");
+      sessionId = Date.now().toString(); // fallback session
+      console.warn("No sessionId in URL. Generated temporary session:", sessionId);
+      alert("⚠️ No session provided. This scan will use a temporary session.");
     }
 
     let scanner;
 
-    async function startScan() {
+    // ------------------ GLOBAL FUNCTIONS ------------------
+    window.startScan = async function() {
       const status = document.getElementById("status");
       const reader = document.getElementById("reader");
 
@@ -58,28 +55,27 @@
           { fps: 10, qrbox: 250 },
           async (qr) => {
             // Item scanned, push to Firebase
-            await push(
-              ref(db, `instant_scans/${sessionId}`),
-              {
-                qr: qr,
-                timestamp: Date.now()
-              }
-            );
+            await push(ref(db, `instant_scans/${sessionId}`), {
+              qr: qr,
+              timestamp: Date.now()
+            });
 
             status.innerText = "✅ Item added. Scan next item.";
           }
         );
       } catch (err) {
         status.innerText = "❌ Camera access denied. Please allow camera.";
+        console.error(err);
       }
-    }
+    };
 
-    function stopScan() {
+    window.stopScan = async function() {
       if (scanner) {
-        scanner.stop();
+        await scanner.stop();
         document.getElementById("reader").style.display = "none";
+        document.getElementById("status").innerText = "⏹ Scanner stopped.";
       }
-    }
+    };
   </script>
 
   <style>
