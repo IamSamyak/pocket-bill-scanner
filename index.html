@@ -9,7 +9,12 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+    import {
+      getDatabase,
+      ref,
+      push,
+      set
+    } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
@@ -34,7 +39,7 @@
     let scanner;
     let locked = false;
 
-    // 🔐 Notify Flutter that scanner opened
+    // 🔔 Inform Flutter that scanner is connected
     await set(ref(db, `instant_sessions/${sessionId}`), {
       active: true,
       connectedAt: Date.now()
@@ -56,18 +61,19 @@
         await scanner.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
-          async (qr) => {
+          async (qrText) => {
             await scanner.stop();
             reader.style.display = "none";
 
-            await set(
-              ref(db, `instant_scans/${sessionId}/${qr}`),
-              { qr, timestamp: Date.now() }
-            );
+            // ✅ ALWAYS PUSH (never use QR as key)
+            await push(ref(db, `instant_scans/${sessionId}`), {
+              qr: qrText,
+              timestamp: Date.now()
+            });
 
             status.innerText = "✅ Item added";
 
-            // ⏳ 1.5 second delay
+            // ⏳ Enforce 1.5s delay
             setTimeout(() => {
               locked = false;
               status.innerText = "Tap Scan for next item";
@@ -77,6 +83,7 @@
       } catch (e) {
         locked = false;
         status.innerText = "❌ Camera permission denied";
+        console.error(e);
       }
     };
   </script>
