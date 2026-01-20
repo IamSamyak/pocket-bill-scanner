@@ -9,12 +9,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      push,
-      set
-    } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+    import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBBPZOSFp4xg5ASC4jd_zEbeVulDRp4Xsk",
@@ -36,14 +31,8 @@
       alert("Invalid session");
     }
 
-    let scanner;
+    let scanner = null;
     let locked = false;
-
-    // 🔔 Inform Flutter that scanner is connected
-    await set(ref(db, `instant_sessions/${sessionId}`), {
-      active: true,
-      connectedAt: Date.now()
-    });
 
     window.startScan = async () => {
       if (locked) return;
@@ -52,9 +41,18 @@
       const reader = document.getElementById("reader");
       const status = document.getElementById("status");
 
+      status.innerText = "📷 Opening camera...";
       reader.style.display = "block";
-      status.innerText = "📷 Scanning...";
 
+      // 🔥 DESTROY OLD INSTANCE (CRITICAL)
+      if (scanner) {
+        try {
+          await scanner.clear();
+        } catch (_) {}
+        scanner = null;
+      }
+
+      // 🔥 CREATE NEW INSTANCE EVERY TIME
       scanner = new Html5Qrcode("reader");
 
       try {
@@ -62,10 +60,14 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qrText) => {
+            // Stop immediately after scan
             await scanner.stop();
+            await scanner.clear();
+            scanner = null;
+
             reader.style.display = "none";
 
-            // ✅ ALWAYS PUSH (never use QR as key)
+            // Push to Firebase
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qrText,
               timestamp: Date.now()
@@ -73,17 +75,17 @@
 
             status.innerText = "✅ Item added";
 
-            // ⏳ Enforce 1.5s delay
+            // ⏳ 1.5s delay before allowing next scan
             setTimeout(() => {
               locked = false;
               status.innerText = "Tap Scan for next item";
             }, 1500);
           }
         );
-      } catch (e) {
+      } catch (err) {
         locked = false;
         status.innerText = "❌ Camera permission denied";
-        console.error(e);
+        console.error(err);
       }
     };
   </script>
@@ -117,6 +119,7 @@
 <body>
   <h2>Instant Bill Scanner</h2>
   <button onclick="startScan()">📷 Scan Item</button>
+
   <div id="reader"></div>
   <div id="status">Ready to scan</div>
 </body>
