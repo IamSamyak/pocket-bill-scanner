@@ -104,9 +104,7 @@
     // Store locally
     localStorage.setItem("activeSession", JSON.stringify({ sessionId, deviceId }));
 
-    // -----------------------------------
     // Release session when page unloads
-    // -----------------------------------
     async function releaseSession() {
       const snapCheck = await get(sessionRef);
       if (snapCheck.exists()) {
@@ -116,7 +114,6 @@
         }
       }
     }
-
     window.addEventListener("beforeunload", releaseSession);
 
     // -----------------------------------
@@ -128,6 +125,21 @@
     const reader = document.getElementById("reader");
     const status = document.getElementById("status");
 
+    async function handleScanResult(qrText) {
+      await push(ref(db, `instant_scans/${sessionId}`), {
+        qr: qrText,
+        token,
+        createdAt: Date.now(),
+        deviceId
+      });
+      status.innerText = "✅ Item added";
+      setTimeout(() => {
+        locked = false;
+        status.innerText = "Tap Scan or Upload for next item";
+      }, 1500);
+    }
+
+    // Camera scan
     window.startScan = async () => {
       if (locked) return;
       locked = true;
@@ -152,21 +164,7 @@
             scanner = null;
             reader.style.display = "none";
 
-            // Add scan to Firebase
-            await push(ref(db, `instant_scans/${sessionId}`), {
-              qr: qrText,
-              token,
-              createdAt: Date.now(),
-              deviceId
-            });
-
-            status.innerText = "✅ Item added";
-
-            // Keep session active until print/save
-            setTimeout(() => {
-              locked = false;
-              status.innerText = "Tap Scan for next item";
-            }, 1500);
+            await handleScanResult(qrText);
           }
         );
       } catch (err) {
@@ -174,6 +172,37 @@
         status.innerText = "❌ Camera permission denied";
         console.error(err);
       }
+    };
+
+    // -----------------------------------
+    // Upload QR Image
+    // -----------------------------------
+    window.uploadQRImage = async () => {
+      if (locked) return;
+      locked = true;
+
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+      fileInput.click();
+
+      fileInput.onchange = async () => {
+        const file = fileInput.files[0];
+        if (!file) {
+          locked = false;
+          return;
+        }
+
+        try {
+          if (!scanner) scanner = new Html5Qrcode("reader");
+          const qrText = await scanner.scanFile(file, true);
+          await handleScanResult(qrText);
+        } catch (err) {
+          console.error(err);
+          status.innerText = "❌ Failed to read QR image";
+          locked = false;
+        }
+      };
     };
 
     // -----------------------------------
@@ -198,7 +227,7 @@
 
       status.innerText = `✅ "${type}" sent`;
 
-      // After print/save, release activeDeviceId
+      // Release session after print/save
       await releaseSession();
     };
   </script>
@@ -214,7 +243,8 @@
 
 <body>
   <h2>Instant Bill Scanner</h2>
-  <button id="scan-btn" onclick="startScan()">📷 Scan Item</button>
+  <button onclick="startScan()">📷 Scan Item</button>
+  <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
 
   <div>
     <button onclick="sendCommand('print')">🖨 Print Bill</button>
