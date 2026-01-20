@@ -11,7 +11,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     // 🔥 Replace with your Firebase config
     const firebaseConfig = {
@@ -36,12 +36,13 @@
     }
 
     let scanner;
+    let isScanning = false;
 
     // ------------------ FUNCTIONS ------------------
     window.startScan = async function() {
-      if (!sessionId) {
-        return;
-      }
+      if (!sessionId || isScanning) return;
+
+      isScanning = true;
 
       const status = document.getElementById("status");
       const reader = document.getElementById("reader");
@@ -56,23 +57,28 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qr) => {
-            // 1️⃣ Push scanned QR to Firebase
-            await push(ref(db, `instant_scans/${sessionId}`), {
+            // 1️⃣ Prevent multiple pushes for same scan
+            scanner.stop();
+            reader.style.display = "none";
+
+            // Push QR to Firebase using QR itself as key
+            await set(ref(db, `instant_scans/${sessionId}/${qr}`), {
               qr: qr,
               timestamp: Date.now()
             });
 
-            // 2️⃣ Stop camera immediately after one scan
-            await scanner.stop();
-            reader.style.display = "none";
+            status.innerText = "✅ Item added.";
 
-            // 3️⃣ Update status
-            status.innerText = "✅ Item added. Press 'Start Scan' for next item.";
+            // 2️⃣ Wait 1.5 seconds before allowing next scan
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            status.innerText = "📷 Press 'Start Scan' for next item.";
+            isScanning = false;
           }
         );
       } catch (err) {
         status.innerText = "❌ Camera access denied. Please allow camera.";
         console.error(err);
+        isScanning = false;
       }
     };
 
@@ -81,6 +87,7 @@
         await scanner.stop();
         document.getElementById("reader").style.display = "none";
         document.getElementById("status").innerText = "⏹ Scanner stopped.";
+        isScanning = false;
       }
     };
   </script>
