@@ -14,7 +14,8 @@
       ref,
       push,
       set,
-      get
+      get,
+      update
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     // -----------------------------------
@@ -84,6 +85,13 @@
     }
 
     // -----------------------------------
+    // STRICT ONE-PHONE-ONLY BLOCK
+    // -----------------------------------
+    if (sessionData.connectedAt) {
+      blockAccess("This scanner is already connected by another device.");
+    }
+
+    // -----------------------------------
     // SCANNER LOGIC
     // -----------------------------------
     let scanner = null;
@@ -118,26 +126,30 @@
             scanner = null;
             reader.style.display = "none";
 
-            // 🔐 SECURE WRITE (TOKEN MATCHED BY RULES)
+            // 🔐 WRITE SCAN (TOKEN VALIDATED BY RULES)
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qrText,
               token: token,
               createdAt: Date.now()
             });
 
-            status.innerText = "✅ Item added";
-
+            // 🔒 MARK SESSION AS CONNECTED (ONE PHONE ONLY)
             if (!connected) {
               connected = true;
               scanButton.style.display = "none";
+
+              await update(sessionRef, {
+                connected: true,
+                connectedAt: Date.now()
+              });
             }
+
+            status.innerText = "✅ Item added";
 
             setTimeout(() => {
               locked = false;
-              status.innerText = connected
-                ? "Device connected!"
-                : "Tap Scan for next item";
-            }, 1500);
+              status.innerText = "Device connected!";
+            }, 1200);
           }
         );
       } catch (err) {
