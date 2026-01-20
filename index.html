@@ -29,18 +29,20 @@
 
     // -------- SESSION ID FROM URL --------
     const params = new URLSearchParams(window.location.search);
-    let sessionId = params.get("session");
+    const sessionId = params.get("session");
 
     if (!sessionId) {
-      sessionId = Date.now().toString(); // fallback session
-      console.warn("No sessionId in URL. Generated temporary session:", sessionId);
-      alert("⚠️ No session provided. This scan will use a temporary session.");
+      alert("Invalid session. Cannot scan items.");
     }
 
     let scanner;
 
-    // ------------------ GLOBAL FUNCTIONS ------------------
+    // ------------------ FUNCTIONS ------------------
     window.startScan = async function() {
+      if (!sessionId) {
+        return;
+      }
+
       const status = document.getElementById("status");
       const reader = document.getElementById("reader");
 
@@ -54,13 +56,18 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qr) => {
-            // Item scanned, push to Firebase
+            // 1️⃣ Push scanned QR to Firebase
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qr,
               timestamp: Date.now()
             });
 
-            status.innerText = "✅ Item added. Scan next item.";
+            // 2️⃣ Stop camera immediately after one scan
+            await scanner.stop();
+            reader.style.display = "none";
+
+            // 3️⃣ Update status
+            status.innerText = "✅ Item added. Press 'Start Scan' for next item.";
           }
         );
       } catch (err) {
