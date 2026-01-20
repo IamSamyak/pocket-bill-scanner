@@ -40,7 +40,6 @@
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session");
     const token = params.get("token");
-
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
     // -----------------------------------
@@ -75,14 +74,13 @@
     if (!snap.exists()) blockAccess("Session does not exist.");
 
     const sessionData = snap.val();
-
     if (sessionData.token !== token) blockAccess("Invalid token.");
     if (!sessionData.createdAt || Date.now() - sessionData.createdAt > THREE_DAYS_MS) {
       blockAccess("Session expired.");
     }
 
     // -----------------------------------
-    // Access control for single active device
+    // Access control: only one active device
     // -----------------------------------
     let allowConnection = false;
     const savedSession = JSON.parse(localStorage.getItem("activeSession") || "{}");
@@ -97,20 +95,19 @@
       blockAccess("Another device is currently using this session.");
     }
 
-    // Mark this device as active
+    // Mark device as active
     await update(sessionRef, {
       activeDeviceId: deviceId,
       connectedAt: Date.now()
     });
 
-    // Store locally for 3-day persistence
-    localStorage.setItem("activeSession", JSON.stringify({
-      sessionId,
-      deviceId
-    }));
+    // Store locally
+    localStorage.setItem("activeSession", JSON.stringify({ sessionId, deviceId }));
 
+    // -----------------------------------
     // Release session when page unloads
-    window.addEventListener("beforeunload", async () => {
+    // -----------------------------------
+    async function releaseSession() {
       const snapCheck = await get(sessionRef);
       if (snapCheck.exists()) {
         const data = snapCheck.val();
@@ -118,7 +115,9 @@
           await update(sessionRef, { activeDeviceId: null });
         }
       }
-    });
+    }
+
+    window.addEventListener("beforeunload", releaseSession);
 
     // -----------------------------------
     // SCANNER LOGIC
@@ -127,7 +126,6 @@
     let locked = false;
 
     const reader = document.getElementById("reader");
-    const scanButton = document.getElementById("scan-btn");
     const status = document.getElementById("status");
 
     window.startScan = async () => {
@@ -154,16 +152,17 @@
             scanner = null;
             reader.style.display = "none";
 
-            // 🔐 Secure write
+            // Add scan to Firebase
             await push(ref(db, `instant_scans/${sessionId}`), {
               qr: qrText,
-              token: token,
+              token,
               createdAt: Date.now(),
-              deviceId: deviceId
+              deviceId
             });
 
             status.innerText = "✅ Item added";
 
+            // Keep session active until print/save
             setTimeout(() => {
               locked = false;
               status.innerText = "Tap Scan for next item";
@@ -190,13 +189,17 @@
         return;
       }
 
+      // Send command
       await set(ref(db, `instant_commands/${sessionId}`), {
         type,
         createdAt: Date.now(),
-        deviceId: deviceId
+        deviceId
       });
 
       status.innerText = `✅ "${type}" sent`;
+
+      // After print/save, release activeDeviceId
+      await releaseSession();
     };
   </script>
 
