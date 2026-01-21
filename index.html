@@ -32,40 +32,57 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Fixed session path
-    const sessionId = "main_qr_session";
-
-    // -----------------------------------
-    // SCANNER STATE
-    // -----------------------------------
     let scanner = null;
     const reader = document.getElementById("reader");
     const status = document.getElementById("status");
+
+    // Get token from URL query
+    const urlParams = new URLSearchParams(window.location.search);
+    const TOKEN = urlParams.get("token");
+
+    if (!TOKEN) {
+      alert("No token found! Scanning disabled.");
+    }
 
     // -----------------------------------
     // Handle scanned QR
     // -----------------------------------
     async function handleScanResult(qrText) {
+      if (!TOKEN) return;
+
       try {
-        await push(ref(db, `instant_scans/${sessionId}`), {
+        await push(ref(db, `instant_scans`), {
           qr: qrText,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          token: TOKEN
         });
 
         status.innerText = "✅ Item added!";
-        setTimeout(() => status.innerText = "Ready to scan", 1200);
       } catch (err) {
         status.innerText = "❌ Failed to push QR";
         console.error(err);
+      } finally {
+        // Stop camera after one scan
+        if (scanner) {
+          await scanner.stop();
+          await scanner.clear();
+          reader.style.display = "none";
+        }
+        status.innerText += " | Camera stopped";
       }
     }
 
     // -----------------------------------
-    // Camera Scan (continuous)
+    // Camera Scan (single scan)
     // -----------------------------------
     window.startScan = async () => {
+      if (!TOKEN) {
+        alert("Invalid token! Cannot scan.");
+        return;
+      }
+
       reader.style.display = "block";
-      status.innerText = "📷 Starting camera...";
+      status.innerText = "📷 Opening camera...";
 
       scanner ??= new Html5Qrcode("reader");
 
@@ -74,14 +91,14 @@
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qrText) => {
-            // Each scan is processed immediately
+            // Stop camera immediately after first scan
             await handleScanResult(qrText);
           },
           (errorMessage) => {
             // optional: handle decode errors silently
           }
         );
-        status.innerText = "📷 Scanning...";
+        status.innerText = "📷 Scan ready...";
       } catch (err) {
         status.innerText = "❌ Camera error";
         console.error(err);
@@ -89,21 +106,14 @@
     };
 
     // -----------------------------------
-    // Stop scanning manually
-    // -----------------------------------
-    window.stopScan = async () => {
-      if (scanner) {
-        await scanner.stop();
-        await scanner.clear();
-        reader.style.display = "none";
-        status.innerText = "📷 Scan stopped";
-      }
-    };
-
-    // -----------------------------------
     // Upload QR Image
     // -----------------------------------
     window.uploadQRImage = async () => {
+      if (!TOKEN) {
+        alert("Invalid token! Cannot upload.");
+        return;
+      }
+
       const input = document.createElement("input");
       input.type = "file";
       input.accept = "image/*";
@@ -113,7 +123,12 @@
         try {
           scanner ??= new Html5Qrcode("reader");
           const qrText = await scanner.scanFile(input.files[0], true);
-          await handleScanResult(qrText);
+          await push(ref(db, `instant_scans`), {
+            qr: qrText,
+            createdAt: Date.now(),
+            token: TOKEN
+          });
+          status.innerText = "✅ QR uploaded!";
         } catch (err) {
           status.innerText = "❌ QR read failed";
           console.error(err);
@@ -125,13 +140,18 @@
     // Send print/save commands
     // -----------------------------------
     window.sendCommand = async (type) => {
+      if (!TOKEN) {
+        alert("Invalid token! Cannot send command.");
+        return;
+      }
+
       try {
-        await set(ref(db, `instant_commands/${sessionId}`), {
+        await set(ref(db, `instant_commands`), {
           type,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          token: TOKEN
         });
         status.innerText = `✅ ${type} sent`;
-        setTimeout(() => status.innerText = "Ready to scan", 1200);
       } catch (err) {
         status.innerText = `❌ ${type} failed`;
         console.error(err);
@@ -150,8 +170,7 @@
 <body>
   <h2>Instant Bill Scanner</h2>
 
-  <button onclick="startScan()">📷 Start Camera Scan</button>
-  <button onclick="stopScan()">✋ Stop Camera Scan</button>
+  <button onclick="startScan()">📷 Scan</button>
   <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
 
   <div style="margin-top: 12px;">
