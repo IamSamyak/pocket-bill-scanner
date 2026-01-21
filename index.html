@@ -32,17 +32,8 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // -----------------------------------
-    // URL PARAMS
-    // -----------------------------------
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session");
-    const token = params.get("token");
-
-    if (!sessionId || !token) {
-      document.body.innerHTML = "<h2>❌ Invalid link</h2>";
-      throw new Error("Missing session or token");
-    }
+    // Fixed session path
+    const sessionId = "main_qr_session";
 
     // -----------------------------------
     // SCANNER STATE
@@ -54,9 +45,9 @@
     const status = document.getElementById("status");
 
     async function handleScanResult(qrText) {
+      // Push directly to DB
       await push(ref(db, `instant_scans/${sessionId}`), {
         qr: qrText,
-        token,
         createdAt: Date.now()
       });
 
@@ -126,7 +117,6 @@
     window.sendCommand = async (type) => {
       await set(ref(db, `instant_commands/${sessionId}`), {
         type,
-        token,
         createdAt: Date.now()
       });
 
