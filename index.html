@@ -14,8 +14,7 @@
       ref,
       push,
       set,
-      get,
-      update
+      get
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     // -----------------------------------
@@ -43,15 +42,6 @@
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
     // -----------------------------------
-    // Device ID (unique per device)
-    // -----------------------------------
-    let deviceId = localStorage.getItem("deviceId");
-    if (!deviceId) {
-      deviceId = crypto.randomUUID();
-      localStorage.setItem("deviceId", deviceId);
-    }
-
-    // -----------------------------------
     // UI Blocker
     // -----------------------------------
     function blockAccess(message) {
@@ -65,7 +55,7 @@
     }
 
     // -----------------------------------
-    // Validate Session
+    // Validate Session (TOKEN ONLY)
     // -----------------------------------
     if (!sessionId || !token) blockAccess("Missing session token.");
 
@@ -74,47 +64,12 @@
     if (!snap.exists()) blockAccess("Session does not exist.");
 
     const sessionData = snap.val();
+
     if (sessionData.token !== token) blockAccess("Invalid token.");
+
     if (!sessionData.createdAt || Date.now() - sessionData.createdAt > THREE_DAYS_MS) {
       blockAccess("Session expired.");
     }
-
-    // -----------------------------------
-    // Access control: only one active device
-    // -----------------------------------
-    let allowConnection = false;
-    const savedSession = JSON.parse(localStorage.getItem("activeSession") || "{}");
-
-    if (savedSession.sessionId === sessionId && savedSession.deviceId === deviceId) {
-      allowConnection = true; // same device reconnect
-    } else if (!sessionData.activeDeviceId) {
-      allowConnection = true; // no device active
-    }
-
-    if (!allowConnection) {
-      blockAccess("Another device is currently using this session.");
-    }
-
-    // Mark device as active
-    await update(sessionRef, {
-      activeDeviceId: deviceId,
-      connectedAt: Date.now()
-    });
-
-    // Store locally
-    localStorage.setItem("activeSession", JSON.stringify({ sessionId, deviceId }));
-
-    // Release session when page unloads
-    async function releaseSession() {
-      const snapCheck = await get(sessionRef);
-      if (snapCheck.exists()) {
-        const data = snapCheck.val();
-        if (data.activeDeviceId === deviceId) {
-          await update(sessionRef, { activeDeviceId: null });
-        }
-      }
-    }
-    window.addEventListener("beforeunload", releaseSession);
 
     // -----------------------------------
     // SCANNER LOGIC
@@ -129,17 +84,19 @@
       await push(ref(db, `instant_scans/${sessionId}`), {
         qr: qrText,
         token,
-        createdAt: Date.now(),
-        deviceId
+        createdAt: Date.now()
       });
+
       status.innerText = "✅ Item added";
       setTimeout(() => {
         locked = false;
         status.innerText = "Tap Scan or Upload for next item";
-      }, 1500);
+      }, 1200);
     }
 
+    // -----------------------------------
     // Camera scan
+    // -----------------------------------
     window.startScan = async () => {
       if (locked) return;
       locked = true;
@@ -163,7 +120,6 @@
             await scanner.clear();
             scanner = null;
             reader.style.display = "none";
-
             await handleScanResult(qrText);
           }
         );
@@ -206,36 +162,41 @@
     };
 
     // -----------------------------------
-    // SEND COMMANDS
+    // SEND COMMANDS (TOKEN ONLY)
     // -----------------------------------
     window.sendCommand = async (type) => {
-      const snapCheck = await get(sessionRef);
-      if (!snapCheck.exists()) return;
-
-      const data = snapCheck.val();
-      if (data.activeDeviceId !== deviceId) {
-        alert("❌ Cannot send command: Another device is active.");
-        return;
-      }
-
-      // Send command
       await set(ref(db, `instant_commands/${sessionId}`), {
         type,
-        createdAt: Date.now(),
-        deviceId
+        token,
+        createdAt: Date.now()
       });
 
       status.innerText = `✅ "${type}" sent`;
-
-      // Release session after print/save
-      await releaseSession();
     };
   </script>
 
   <style>
-    body { font-family: Arial; text-align: center; padding: 16px; background: #f7f7f7; }
-    #reader { width: 300px; margin: 16px auto; display: none; }
-    button { padding: 14px 22px; font-size: 16px; border-radius: 6px; background: #4f46e5; color: white; border: none; cursor: pointer; margin: 6px; }
+    body {
+      font-family: Arial;
+      text-align: center;
+      padding: 16px;
+      background: #f7f7f7;
+    }
+    #reader {
+      width: 300px;
+      margin: 16px auto;
+      display: none;
+    }
+    button {
+      padding: 14px 22px;
+      font-size: 16px;
+      border-radius: 6px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin: 6px;
+    }
     h2 { margin-bottom: 16px; }
     #status { margin-top: 12px; font-weight: bold; }
   </style>
@@ -243,6 +204,7 @@
 
 <body>
   <h2>Instant Bill Scanner</h2>
+
   <button onclick="startScan()">📷 Scan Item</button>
   <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
 
