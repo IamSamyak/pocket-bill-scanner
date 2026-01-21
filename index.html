@@ -39,51 +39,64 @@
     // SCANNER STATE
     // -----------------------------------
     let scanner = null;
-    let locked = false;
-
     const reader = document.getElementById("reader");
     const status = document.getElementById("status");
 
+    // -----------------------------------
+    // Handle scanned QR
+    // -----------------------------------
     async function handleScanResult(qrText) {
-      // Push directly to DB
-      await push(ref(db, `instant_scans/${sessionId}`), {
-        qr: qrText,
-        createdAt: Date.now()
-      });
+      try {
+        await push(ref(db, `instant_scans/${sessionId}`), {
+          qr: qrText,
+          createdAt: Date.now()
+        });
 
-      status.innerText = "✅ Item added";
-      setTimeout(() => {
-        locked = false;
-        status.innerText = "Ready to scan";
-      }, 1200);
+        status.innerText = "✅ Item added!";
+        setTimeout(() => status.innerText = "Ready to scan", 1200);
+      } catch (err) {
+        status.innerText = "❌ Failed to push QR";
+        console.error(err);
+      }
     }
 
     // -----------------------------------
-    // Camera Scan
+    // Camera Scan (continuous)
     // -----------------------------------
     window.startScan = async () => {
-      if (locked) return;
-      locked = true;
-
-      status.innerText = "📷 Opening camera...";
       reader.style.display = "block";
+      status.innerText = "📷 Starting camera...";
 
-      scanner = new Html5Qrcode("reader");
+      scanner ??= new Html5Qrcode("reader");
 
       try {
         await scanner.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           async (qrText) => {
-            await scanner.stop();
-            await scanner.clear();
-            reader.style.display = "none";
+            // Each scan is processed immediately
             await handleScanResult(qrText);
+          },
+          (errorMessage) => {
+            // optional: handle decode errors silently
           }
         );
+        status.innerText = "📷 Scanning...";
       } catch (err) {
-        locked = false;
         status.innerText = "❌ Camera error";
+        console.error(err);
+      }
+    };
+
+    // -----------------------------------
+    // Stop scanning manually
+    // -----------------------------------
+    window.stopScan = async () => {
+      if (scanner) {
+        await scanner.stop();
+        await scanner.clear();
+        reader.style.display = "none";
+        status.innerText = "📷 Scan stopped";
       }
     };
 
@@ -91,9 +104,6 @@
     // Upload QR Image
     // -----------------------------------
     window.uploadQRImage = async () => {
-      if (locked) return;
-      locked = true;
-
       const input = document.createElement("input");
       input.type = "file";
       input.accept = "image/*";
@@ -104,40 +114,47 @@
           scanner ??= new Html5Qrcode("reader");
           const qrText = await scanner.scanFile(input.files[0], true);
           await handleScanResult(qrText);
-        } catch (_) {
-          locked = false;
+        } catch (err) {
           status.innerText = "❌ QR read failed";
+          console.error(err);
         }
       };
     };
 
     // -----------------------------------
-    // SEND COMMANDS
+    // Send print/save commands
     // -----------------------------------
     window.sendCommand = async (type) => {
-      await set(ref(db, `instant_commands/${sessionId}`), {
-        type,
-        createdAt: Date.now()
-      });
-
-      status.innerText = `✅ ${type} sent`;
+      try {
+        await set(ref(db, `instant_commands/${sessionId}`), {
+          type,
+          createdAt: Date.now()
+        });
+        status.innerText = `✅ ${type} sent`;
+        setTimeout(() => status.innerText = "Ready to scan", 1200);
+      } catch (err) {
+        status.innerText = `❌ ${type} failed`;
+        console.error(err);
+      }
     };
   </script>
 
   <style>
     body { font-family: Arial; text-align: center; padding: 16px; }
-    button { padding: 14px 22px; margin: 6px; }
+    button { padding: 14px 22px; margin: 6px; cursor: pointer; }
     #reader { width: 300px; margin: auto; display: none; }
+    h2 { margin-bottom: 16px; }
   </style>
 </head>
 
 <body>
   <h2>Instant Bill Scanner</h2>
 
-  <button onclick="startScan()">📷 Scan</button>
-  <button onclick="uploadQRImage()">🖼 Upload</button>
+  <button onclick="startScan()">📷 Start Camera Scan</button>
+  <button onclick="stopScan()">✋ Stop Camera Scan</button>
+  <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
 
-  <div>
+  <div style="margin-top: 12px;">
     <button onclick="sendCommand('print')">🖨 Print</button>
     <button onclick="sendCommand('save')">💾 Save</button>
   </div>
