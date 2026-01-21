@@ -13,8 +13,7 @@
       getDatabase,
       ref,
       push,
-      set,
-      get
+      set
     } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
     // -----------------------------------
@@ -39,40 +38,14 @@
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session");
     const token = params.get("token");
-    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
-    // -----------------------------------
-    // UI Blocker
-    // -----------------------------------
-    function blockAccess(message) {
-      document.body.innerHTML = `
-        <div style="margin-top:60px;text-align:center">
-          <h2 style="color:red;">❌ Access Denied</h2>
-          <p>${message}</p>
-        </div>
-      `;
-      throw new Error(message);
+    if (!sessionId || !token) {
+      document.body.innerHTML = "<h2>❌ Invalid link</h2>";
+      throw new Error("Missing session or token");
     }
 
     // -----------------------------------
-    // Validate Session (TOKEN ONLY)
-    // -----------------------------------
-    if (!sessionId || !token) blockAccess("Missing session token.");
-
-    const sessionRef = ref(db, `instant_sessions/${sessionId}`);
-    const snap = await get(sessionRef);
-    if (!snap.exists()) blockAccess("Session does not exist.");
-
-    const sessionData = snap.val();
-
-    if (sessionData.token !== token) blockAccess("Invalid token.");
-
-    if (!sessionData.createdAt || Date.now() - sessionData.createdAt > THREE_DAYS_MS) {
-      blockAccess("Session expired.");
-    }
-
-    // -----------------------------------
-    // SCANNER LOGIC
+    // SCANNER STATE
     // -----------------------------------
     let scanner = null;
     let locked = false;
@@ -90,12 +63,12 @@
       status.innerText = "✅ Item added";
       setTimeout(() => {
         locked = false;
-        status.innerText = "Tap Scan or Upload for next item";
+        status.innerText = "Ready to scan";
       }, 1200);
     }
 
     // -----------------------------------
-    // Camera scan
+    // Camera Scan
     // -----------------------------------
     window.startScan = async () => {
       if (locked) return;
@@ -103,11 +76,6 @@
 
       status.innerText = "📷 Opening camera...";
       reader.style.display = "block";
-
-      if (scanner) {
-        try { await scanner.clear(); } catch (_) {}
-        scanner = null;
-      }
 
       scanner = new Html5Qrcode("reader");
 
@@ -118,15 +86,13 @@
           async (qrText) => {
             await scanner.stop();
             await scanner.clear();
-            scanner = null;
             reader.style.display = "none";
             await handleScanResult(qrText);
           }
         );
       } catch (err) {
         locked = false;
-        status.innerText = "❌ Camera permission denied";
-        console.error(err);
+        status.innerText = "❌ Camera error";
       }
     };
 
@@ -137,32 +103,25 @@
       if (locked) return;
       locked = true;
 
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = "image/*";
-      fileInput.click();
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.click();
 
-      fileInput.onchange = async () => {
-        const file = fileInput.files[0];
-        if (!file) {
-          locked = false;
-          return;
-        }
-
+      input.onchange = async () => {
         try {
-          if (!scanner) scanner = new Html5Qrcode("reader");
-          const qrText = await scanner.scanFile(file, true);
+          scanner ??= new Html5Qrcode("reader");
+          const qrText = await scanner.scanFile(input.files[0], true);
           await handleScanResult(qrText);
-        } catch (err) {
-          console.error(err);
-          status.innerText = "❌ Failed to read QR image";
+        } catch (_) {
           locked = false;
+          status.innerText = "❌ QR read failed";
         }
       };
     };
 
     // -----------------------------------
-    // SEND COMMANDS (TOKEN ONLY)
+    // SEND COMMANDS
     // -----------------------------------
     window.sendCommand = async (type) => {
       await set(ref(db, `instant_commands/${sessionId}`), {
@@ -171,49 +130,29 @@
         createdAt: Date.now()
       });
 
-      status.innerText = `✅ "${type}" sent`;
+      status.innerText = `✅ ${type} sent`;
     };
   </script>
 
   <style>
-    body {
-      font-family: Arial;
-      text-align: center;
-      padding: 16px;
-      background: #f7f7f7;
-    }
-    #reader {
-      width: 300px;
-      margin: 16px auto;
-      display: none;
-    }
-    button {
-      padding: 14px 22px;
-      font-size: 16px;
-      border-radius: 6px;
-      background: #4f46e5;
-      color: white;
-      border: none;
-      cursor: pointer;
-      margin: 6px;
-    }
-    h2 { margin-bottom: 16px; }
-    #status { margin-top: 12px; font-weight: bold; }
+    body { font-family: Arial; text-align: center; padding: 16px; }
+    button { padding: 14px 22px; margin: 6px; }
+    #reader { width: 300px; margin: auto; display: none; }
   </style>
 </head>
 
 <body>
   <h2>Instant Bill Scanner</h2>
 
-  <button onclick="startScan()">📷 Scan Item</button>
-  <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
+  <button onclick="startScan()">📷 Scan</button>
+  <button onclick="uploadQRImage()">🖼 Upload</button>
 
   <div>
-    <button onclick="sendCommand('print')">🖨 Print Bill</button>
-    <button onclick="sendCommand('save')">💾 Save Bill</button>
+    <button onclick="sendCommand('print')">🖨 Print</button>
+    <button onclick="sendCommand('save')">💾 Save</button>
   </div>
 
   <div id="reader"></div>
-  <div id="status">Ready to scan</div>
+  <div id="status">Ready</div>
 </body>
 </html>
