@@ -1,0 +1,21 @@
+body {
+  font-family: Arial;
+  text-align: center;
+  padding: 16px;
+}
+
+button {
+  padding: 14px 22px;
+  margin: 6px;
+  cursor: pointer;
+}
+
+#reader {
+  width: 300px;
+  margin: auto;
+  display: none;
+}
+
+h2 {
+  margin-bottom: 16px;
+}
