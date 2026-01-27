@@ -1,7 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
 import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
-// Firebase configuration
+/* ================= FIREBASE ================= */
+
 const firebaseConfig = {
   apiKey: "AIzaSyBBPZOSFp4Xg5ASC4jd_zEbeVulDRp4Xsk",
   authDomain: "testing-pocket-bill.firebaseapp.com",
@@ -12,53 +13,55 @@ const firebaseConfig = {
   appId: "1:72049299092:web:20a3b9e18ce110c61a6e81"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// DOM Elements
-const reader = document.getElementById("reader");
+/* ================= DOM ================= */
+
 const overlay = document.getElementById("overlay");
 const status = document.getElementById("status");
 const cameraBtn = document.getElementById("cameraBtn");
 const uploadBtn = document.getElementById("uploadBtn");
+const flipBtn = document.getElementById("flipBtn");
 const printBtn = document.getElementById("printBtn");
 
-// 🔊 Beep sound
+/* ================= SOUND ================= */
+
 const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
-// Global variables
+/* ================= STATE ================= */
+
 let scanner = null;
 let cameraActive = false;
+let cameras = [];
+let currentCameraIndex = 0;
 
-// ⏱️ Scan control
+// scan throttling
 let lastScanTime = 0;
 let scanInProgress = false;
-const SCAN_DELAY = 1000; // 1 second
+const SCAN_DELAY = 1000;
 
-// Get token
+/* ================= TOKEN ================= */
+
 const TOKEN =
   new URLSearchParams(location.search).get("token") ||
   localStorage.getItem("instant_token");
 
 if (!TOKEN) {
-  status.textContent = "❌ No token found. Please provide a valid token.";
+  status.textContent = "❌ No token found.";
   alert("❌ No token found. Unable to proceed.");
 } else {
   localStorage.setItem("instant_token", TOKEN);
 }
 
-// Handle QR scan
+/* ================= SCAN HANDLER ================= */
+
 async function handleScan(qr) {
   if (!TOKEN) return;
 
   const now = Date.now();
-
-  // ⛔ Prevent rapid / duplicate scans
-  if (scanInProgress || now - lastScanTime < SCAN_DELAY) {
-    return;
-  }
+  if (scanInProgress || now - lastScanTime < SCAN_DELAY) return;
 
   scanInProgress = true;
   lastScanTime = now;
@@ -70,105 +73,100 @@ async function handleScan(qr) {
       createdAt: now
     });
 
-    // 🔊 Beep on successful scan
     beepSound.currentTime = 0;
     beepSound.play().catch(() => {});
-
     status.textContent = "✅ QR scanned successfully!";
-    console.log("QR scanned:", qr);
   } catch (err) {
     console.error(err);
-    if (err.code === "PERMISSION_DENIED") {
-      status.textContent =
-        "❌ Token invalid or expired. Please get a new token from Pocket Bill app.";
-      alert("❌ Your token is invalid or expired.");
-    } else {
-      status.textContent =
-        "❌ Failed to add item: " + (err.message || "Unknown error");
-    }
+    status.textContent = "❌ Scan failed";
   }
 
-  // 📷 Stop camera automatically after scan
+  // auto stop camera after scan
   if (scanner && cameraActive) {
-    try {
-      await scanner.stop();
-      await scanner.clear();
-      cameraBtn.classList.remove("active");
-      cameraActive = false;
-      overlay.style.display = "flex";
-      status.textContent += " 📷 Camera stopped";
-    } catch (err) {
-      console.error("Error stopping camera:", err);
-    }
+    await scanner.stop();
+    await scanner.clear();
+    cameraActive = false;
+    cameraBtn.classList.remove("active");
+    overlay.style.display = "flex";
   }
 
-  // 🔓 Unlock after delay
-  setTimeout(() => {
-    scanInProgress = false;
-  }, SCAN_DELAY);
+  setTimeout(() => (scanInProgress = false), SCAN_DELAY);
 }
 
-// Camera button click
+/* ================= CAMERA START / STOP ================= */
+
 cameraBtn.onclick = async () => {
-  if (!TOKEN) {
-    status.textContent = "❌ Cannot start camera: invalid token.";
-    return;
-  }
+  if (!TOKEN) return;
 
   if (!cameraActive) {
-    let cameras = [];
     try {
       cameras = await Html5Qrcode.getCameras();
-    } catch (err) {
-      console.error("Camera list error:", err);
-      status.textContent = "❌ Cannot list cameras: " + err.message;
-      return;
-    }
+      if (!cameras.length) {
+        status.textContent = "❌ No cameras found";
+        return;
+      }
 
-    if (!cameras.length) {
-      status.textContent = "❌ No cameras found";
-      return;
-    }
+      currentCameraIndex = 0;
+      scanner ??= new Html5Qrcode("reader");
 
-    const cameraId = cameras[0].id;
-    scanner ??= new Html5Qrcode("reader");
-
-    try {
       await scanner.start(
-        { deviceId: { exact: cameraId } },
-        { fps: 15, qrbox: { width: 400, height: 400 }, aspectRatio: 1.0 },
-        (decodedText) => handleScan(decodedText)
+        { deviceId: { exact: cameras[currentCameraIndex].id } },
+        { fps: 15, qrbox: { width: 400, height: 400 }, aspectRatio: 1 },
+        handleScan
       );
 
-      cameraBtn.classList.add("active");
       cameraActive = true;
+      cameraBtn.classList.add("active");
       overlay.style.display = "none";
-      status.textContent = "📷 Camera active. Scan QR code...";
+      status.textContent = "📷 Camera active";
     } catch (err) {
-      console.error("Camera start error:", err);
-      status.textContent = "❌ Cannot access camera: " + err.message;
+      console.error(err);
+      status.textContent = "❌ Camera error";
     }
   } else {
-    try {
-      await scanner.stop();
-      await scanner.clear();
-      cameraBtn.classList.remove("active");
-      cameraActive = false;
-      overlay.style.display = "flex";
-      status.textContent = "📷 Camera stopped";
-    } catch (err) {
-      console.error("Stop camera error:", err);
-      status.textContent = "❌ Error stopping camera: " + err.message;
-    }
+    await scanner.stop();
+    await scanner.clear();
+    cameraActive = false;
+    cameraBtn.classList.remove("active");
+    overlay.style.display = "flex";
+    status.textContent = "📷 Camera stopped";
   }
 };
 
-// Upload button click (scan from image)
-uploadBtn.onclick = async () => {
-  if (!TOKEN) {
-    status.textContent = "❌ Cannot scan image: invalid token.";
+/* ================= CAMERA FLIP ================= */
+
+flipBtn.onclick = async () => {
+  if (!cameraActive || cameras.length < 2) {
+    status.textContent = "❌ Cannot flip camera";
     return;
   }
+
+  try {
+    await scanner.stop();
+    await scanner.clear();
+
+    currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+
+    await scanner.start(
+      { deviceId: { exact: cameras[currentCameraIndex].id } },
+      { fps: 15, qrbox: { width: 400, height: 400 }, aspectRatio: 1 },
+      handleScan
+    );
+
+    status.textContent =
+      currentCameraIndex === 0
+        ? "📷 Back camera"
+        : "🤳 Front camera";
+  } catch (err) {
+    console.error(err);
+    status.textContent = "❌ Flip failed";
+  }
+};
+
+/* ================= IMAGE UPLOAD ================= */
+
+uploadBtn.onclick = async () => {
+  if (!TOKEN) return;
 
   const input = document.createElement("input");
   input.type = "file";
@@ -176,23 +174,20 @@ uploadBtn.onclick = async () => {
   input.click();
 
   input.onchange = async () => {
-    scanner ??= new Html5Qrcode("reader");
     try {
+      scanner ??= new Html5Qrcode("reader");
       const qr = await scanner.scanFile(input.files[0], true);
       await handleScan(qr);
-    } catch (err) {
-      console.error(err);
+    } catch {
       status.textContent = "❌ No QR found in image";
     }
   };
 };
 
-// Print button click
+/* ================= PRINT ================= */
+
 printBtn.onclick = async () => {
-  if (!TOKEN) {
-    status.textContent = "❌ Cannot send print: invalid token.";
-    return;
-  }
+  if (!TOKEN) return;
 
   try {
     await push(ref(db, "instant_commands"), {
@@ -202,14 +197,7 @@ printBtn.onclick = async () => {
     });
 
     status.textContent = "✅ Print sent";
-  } catch (err) {
-    console.error(err);
-    if (err.code === "PERMISSION_DENIED") {
-      status.textContent = "❌ Token invalid or expired.";
-      alert("❌ Your token is invalid or expired.");
-    } else {
-      status.textContent =
-        "❌ Failed to send print: " + (err.message || "Unknown error");
-    }
+  } catch {
+    status.textContent = "❌ Print failed";
   }
 };
