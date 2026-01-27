@@ -24,6 +24,7 @@ const cameraBtn = document.getElementById("cameraBtn");
 const uploadBtn = document.getElementById("uploadBtn");
 const flipBtn = document.getElementById("flipBtn");
 const printBtn = document.getElementById("printBtn");
+const flashBtn = document.getElementById("flashBtn");
 
 /* ================= SOUND ================= */
 
@@ -36,8 +37,8 @@ let scanner = null;
 let cameraActive = false;
 let cameras = [];
 let currentCameraIndex = 0;
+let flashOn = false;
 
-// scan throttling
 let lastScanTime = 0;
 let scanInProgress = false;
 const SCAN_DELAY = 1000;
@@ -53,6 +54,15 @@ if (!TOKEN) {
   alert("❌ No token found. Unable to proceed.");
 } else {
   localStorage.setItem("instant_token", TOKEN);
+}
+
+/* ================= HELPERS ================= */
+
+function getBackCameraIndex(cameras) {
+  const keywords = ["back", "rear", "environment"];
+  return cameras.findIndex(cam =>
+    keywords.some(k => cam.label.toLowerCase().includes(k))
+  );
 }
 
 /* ================= SCAN HANDLER ================= */
@@ -81,15 +91,6 @@ async function handleScan(qr) {
     status.textContent = "❌ Scan failed";
   }
 
-  // auto stop camera after scan
-  if (scanner && cameraActive) {
-    await scanner.stop();
-    await scanner.clear();
-    cameraActive = false;
-    cameraBtn.classList.remove("active");
-    overlay.style.display = "flex";
-  }
-
   setTimeout(() => (scanInProgress = false), SCAN_DELAY);
 }
 
@@ -106,7 +107,9 @@ cameraBtn.onclick = async () => {
         return;
       }
 
-      currentCameraIndex = 0;
+      const backIndex = getBackCameraIndex(cameras);
+      currentCameraIndex = backIndex !== -1 ? backIndex : 0;
+
       scanner ??= new Html5Qrcode("reader");
 
       await scanner.start(
@@ -118,6 +121,7 @@ cameraBtn.onclick = async () => {
       cameraActive = true;
       cameraBtn.classList.add("active");
       overlay.style.display = "none";
+      flashBtn.style.display = "flex";
       status.textContent = "📷 Camera active";
     } catch (err) {
       console.error(err);
@@ -127,8 +131,13 @@ cameraBtn.onclick = async () => {
     await scanner.stop();
     await scanner.clear();
     cameraActive = false;
+    flashOn = false;
+
     cameraBtn.classList.remove("active");
+    flashBtn.classList.remove("active");
+    flashBtn.style.display = "none";
     overlay.style.display = "flex";
+
     status.textContent = "📷 Camera stopped";
   }
 };
@@ -144,6 +153,8 @@ flipBtn.onclick = async () => {
   try {
     await scanner.stop();
     await scanner.clear();
+    flashOn = false;
+    flashBtn.classList.remove("active");
 
     currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
 
@@ -153,13 +164,38 @@ flipBtn.onclick = async () => {
       handleScan
     );
 
-    status.textContent =
-      currentCameraIndex === 0
-        ? "📷 Back camera"
-        : "🤳 Front camera";
+    status.textContent = "📷 Camera switched";
   } catch (err) {
     console.error(err);
     status.textContent = "❌ Flip failed";
+  }
+};
+
+/* ================= FLASH (TORCH) ================= */
+
+flashBtn.onclick = async () => {
+  if (!scanner || !cameraActive) return;
+
+  try {
+    const track = scanner.getRunningTrack();
+    const caps = track.getCapabilities();
+
+    if (!caps.torch) {
+      status.textContent = "❌ Flash not supported";
+      return;
+    }
+
+    flashOn = !flashOn;
+
+    await track.applyConstraints({
+      advanced: [{ torch: flashOn }]
+    });
+
+    flashBtn.classList.toggle("active", flashOn);
+    status.textContent = flashOn ? "🔦 Flash on" : "🔦 Flash off";
+  } catch (err) {
+    console.error(err);
+    status.textContent = "❌ Flash error";
   }
 };
 

@@ -30,12 +30,13 @@
     </div>
   </header>
 
-  <!-- Scrollable Content -->
+  <!-- Main -->
   <main>
     <div class="scanner-frame">
       <div id="reader"></div>
 
-      <div class="overlay">
+      <!-- Overlay -->
+      <div class="overlay" id="overlay">
         <div class="scan-box">
           <div class="corner tl"></div>
           <div class="corner tr"></div>
@@ -44,6 +45,11 @@
           <div class="scanner-line"></div>
         </div>
       </div>
+
+      <!-- FLASH BUTTON (inside scanner) -->
+      <button id="flashBtn" class="flash-btn">
+        <span class="material-symbols-outlined">flash_on</span>
+      </button>
     </div>
 
     <div class="controls">
@@ -68,7 +74,7 @@
     </div>
   </main>
 
-  <!-- Fixed Footer -->
+  <!-- Footer -->
   <footer>
     <button id="printBtn" class="print-btn">
       <span class="material-symbols-outlined">print</span>
@@ -78,6 +84,5 @@
 
   <!-- JS -->
   <script type="module" src="app.js"></script>
-
 </body>
 </html>
