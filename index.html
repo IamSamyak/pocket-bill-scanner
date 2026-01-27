@@ -1,32 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Instant Bill Scanner</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pocket Bill - Basic Checkout</title>
+
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    rel="stylesheet">
 
   <!-- CSS -->
   <link rel="stylesheet" href="style.css">
 
   <!-- QR Code Scanner -->
-  <script src="https://unpkg.com/html5-qrcode"></script>
-  
-  <!-- Firebase & Main JS -->
-  <script type="module" src="app.js" defer></script>
+  <script src="./js/html5-qrcode.min.js"></script>
+
 </head>
 
 <body>
-  <h2>Instant Bill Scanner</h2>
 
-  <button onclick="startScan()">📷 Scan</button>
-  <button onclick="uploadQRImage()">🖼 Upload QR Image</button>
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">receipt_long</span>
+      </div>
+      <h2>Pocket Bill</h2>
+    </div>
+  </header>
 
-  <div style="margin-top: 12px;">
-    <button onclick="sendCommand('print')">🖨 Print</button>
-    <button onclick="sendCommand('save')">💾 Save</button>
-  </div>
+  <main>
+    <div class="scanner-frame">
+      <div id="reader"></div>
+      <div class="overlay" id="overlay">
+        <div class="scan-box">
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="scanner-line"></div>
+        </div>
+      </div>
+    </div>
 
-  <div id="reader"></div>
-  <div id="status">Ready</div>
+    <div class="controls">
+      <div class="buttons">
+        <button id="uploadBtn" class="btn-small">
+          <span class="material-symbols-outlined">image</span>
+        </button>
+
+        <button id="cameraBtn" class="btn-camera">
+          <span class="material-symbols-outlined"
+            style="font-size:40px; font-variation-settings:'FILL' 1">photo_camera</span>
+        </button>
+
+        <button class="btn-small">
+          <span class="material-symbols-outlined">sync_alt</span>
+        </button>
+      </div>
+
+      <span id="status">Ready</span>
+    </div>
+  </main>
+
+  <footer>
+    <button id="printBtn" class="print-btn">
+      <span class="material-symbols-outlined">print</span>
+      Print Bill
+    </button>
+  </footer>
+
+  <!-- JS -->
+  <script type="module" src="app.js"></script>
+
 </body>
+
 </html>
