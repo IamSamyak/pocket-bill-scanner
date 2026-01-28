@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-import { getDatabase, ref, push, get, onValue } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+import { getDatabase, ref, push, get, onValue, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
 /* ================= FIREBASE ================= */
 const firebaseConfig = {
@@ -16,13 +16,13 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 /* ================= DOM ================= */
-const overlay   = document.getElementById("overlay");
+const overlay = document.getElementById("overlay");
 const scannerFrame = document.querySelector(".scanner-frame");
 const cameraBtn = document.getElementById("cameraBtn");
 const uploadBtn = document.getElementById("uploadBtn");
-const flipBtn   = document.getElementById("flipBtn");
-const printBtn  = document.getElementById("printBtn");
-const flashBtn  = document.getElementById("flashBtn");
+const flipBtn = document.getElementById("flipBtn");
+const printBtn = document.getElementById("printBtn");
+const flashBtn = document.getElementById("flashBtn");
 
 /* ================= STATUS BANNER ================= */
 let statusBanner = document.createElement("div");
@@ -30,7 +30,7 @@ statusBanner.className = "status-banner";
 statusBanner.textContent = "Initializing...";
 scannerFrame.appendChild(statusBanner);
 
-function updateStatus(text, type="") {
+function updateStatus(text, type = "") {
   statusBanner.textContent = text;
   statusBanner.className = "status-banner " + type;
 }
@@ -60,6 +60,19 @@ if (!TOKEN) {
   localStorage.setItem("instant_token", TOKEN);
 }
 
+/* ================= CLIENT TOKEN WRITE ================= */
+async function writeClientToken(token) {
+  try {
+    await set(ref(db, "client_token"), {
+      token: token,
+      lastUpdated: Date.now()
+    });
+    console.log("✅ Client token written to DB");
+  } catch (err) {
+    console.error("❌ Failed to write client token:", err);
+  }
+}
+
 /* ================= MACHINE STATUS ================= */
 async function checkServerStatus() {
   try {
@@ -84,13 +97,18 @@ async function checkServerStatus() {
         updateStatus("✅ Machine is listening", "success");
       }
     });
-
   } catch (err) {
     console.error("Failed to get server status:", err);
     updateStatus("❌ Unable to read machine status", "error");
   }
 }
-checkServerStatus();
+
+/* ================= INIT: WRITE TOKEN THEN CHECK STATUS ================= */
+if (TOKEN) {
+  writeClientToken(TOKEN).then(() => {
+    checkServerStatus();
+  });
+}
 
 /* ================= HELPERS ================= */
 function getBackCameraIndex(list) {
