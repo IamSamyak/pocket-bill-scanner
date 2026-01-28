@@ -80,6 +80,7 @@ main {
   overflow: hidden;
 }
 
+/* Scanner video */
 #reader,
 #reader video {
   width: 100%;
@@ -87,7 +88,29 @@ main {
   object-fit: cover;
 }
 
-/* Overlay scan box */
+/* ================= STATUS BANNER ================= */
+.status-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-align: center;
+  z-index: 50;
+  pointer-events: none;
+  transition: background 0.3s, color 0.3s;
+}
+
+.status-banner.success { background: var(--success); color: #fff; }
+.status-banner.error   { background: var(--danger);  color: #fff; }
+.status-banner.warning { background: var(--warning); color: #111; }
+
+/* ================= OVERLAY SCAN BOX ================= */
 .overlay {
   position: absolute;
   inset: 0;
@@ -146,7 +169,7 @@ main {
   background: rgba(0, 0, 0, 0.65);
   color: #fff;
 
-  display: none; /* shown only when camera is active */
+  display: none; /* only when camera is active */
 
   align-items: center;
   justify-content: center;
@@ -212,15 +235,6 @@ button:hover {
 .btn-camera.active {
   background: var(--danger);
 }
-
-#status {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-#status.success { color: var(--success); }
-#status.error { color: var(--danger); }
-#status.warning { color: var(--warning); }
 
 /* ================= FOOTER ================= */
 footer {
