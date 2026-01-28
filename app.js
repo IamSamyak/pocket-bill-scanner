@@ -16,30 +16,24 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 /* ================= DOM ================= */
-const overlay = document.getElementById("overlay");
-const status = document.getElementById("status");
+const overlay   = document.getElementById("overlay");
+const status    = document.getElementById("status");
 const cameraBtn = document.getElementById("cameraBtn");
 const uploadBtn = document.getElementById("uploadBtn");
-const flipBtn = document.getElementById("flipBtn");
-const printBtn = document.getElementById("printBtn");
-const flashBtn = document.getElementById("flashBtn");
+const flipBtn   = document.getElementById("flipBtn");
+const printBtn  = document.getElementById("printBtn");
+const flashBtn  = document.getElementById("flashBtn");
 
 /* ================= SOUND ================= */
 const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
 /* ================= STATE ================= */
-let scanner = null;
+let scanner = new Html5Qrcode("reader");
 let cameraActive = false;
 let cameras = [];
 let currentCameraIndex = 0;
 let flashOn = false;
-
-let lastScanTime = 0;
-let scanInProgress = false;
-const SCAN_DELAY = 1000; // 1 second
-
-let scanDoneSinceCameraStart = false; // prevent multiple scans per camera session
 
 /* ================= TOKEN ================= */
 const TOKEN =
@@ -61,85 +55,80 @@ function getBackCameraIndex(cameras) {
   );
 }
 
+async function stopCamera() {
+  if (!cameraActive) return;
+
+  try {
+    await scanner.stop();
+    await scanner.clear(); // 🔥 removes video / image UI
+  } catch (e) {}
+
+  cameraActive = false;
+  flashOn = false;
+
+  cameraBtn.classList.remove("active");
+  flashBtn.classList.remove("active");
+  flashBtn.style.display = "none";
+  overlay.style.display = "flex";
+}
+
 /* ================= SCAN HANDLER ================= */
 async function handleScan(qr) {
   if (!TOKEN) return;
-
-  const now = Date.now();
-
-  if (scanDoneSinceCameraStart) {
-    status.textContent = "⚠️ Restart camera to scan next item";
-    return;
-  }
-
-  if (scanInProgress || now - lastScanTime < SCAN_DELAY) return;
-
-  scanInProgress = true;
-  lastScanTime = now;
 
   try {
     await push(ref(db, "instant_scans"), {
       qr,
       token: TOKEN,
-      createdAt: now
+      createdAt: Date.now()
     });
 
     beepSound.currentTime = 0;
     beepSound.play().catch(() => {});
     status.textContent = "✅ QR scanned successfully!";
-    scanDoneSinceCameraStart = true; // mark scan done
   } catch (err) {
     console.error(err);
     status.textContent = "❌ Scan failed";
   }
 
-  setTimeout(() => (scanInProgress = false), SCAN_DELAY);
+  // 🔥 AUTO CLOSE CAMERA AFTER ONE SCAN
+  await stopCamera();
 }
 
-/* ================= CAMERA START / STOP ================= */
+/* ================= CAMERA START ================= */
 cameraBtn.onclick = async () => {
   if (!TOKEN) return;
 
-  if (!cameraActive) {
-    try {
-      cameras = await Html5Qrcode.getCameras();
-      if (!cameras.length) {
-        status.textContent = "❌ No cameras found";
-        return;
-      }
-
-      const backIndex = getBackCameraIndex(cameras);
-      currentCameraIndex = backIndex !== -1 ? backIndex : 0;
-
-      scanner ??= new Html5Qrcode("reader");
-
-      await scanner.start(
-        { deviceId: { exact: cameras[currentCameraIndex].id } },
-        { fps: 15, qrbox: { width: 400, height: 400 }, aspectRatio: 1 },
-        handleScan
-      );
-
-      cameraActive = true;
-      scanDoneSinceCameraStart = false; // reset
-      cameraBtn.classList.add("active");
-      overlay.style.display = "none";
-      flashBtn.style.display = "flex";
-      status.textContent = "📷 Camera active";
-    } catch (err) {
-      console.error(err);
-      status.textContent = "❌ Camera error";
-    }
-  } else {
-    await scanner.stop();
-    await scanner.clear();
-    cameraActive = false;
-    flashOn = false;
-    scanDoneSinceCameraStart = false; // reset
-    cameraBtn.classList.remove("active");
-    flashBtn.classList.remove("active");
-    flashBtn.style.display = "none";
-    overlay.style.display = "flex";
+  if (cameraActive) {
+    await stopCamera();
     status.textContent = "📷 Camera stopped";
+    return;
+  }
+
+  try {
+    cameras = await Html5Qrcode.getCameras();
+    if (!cameras.length) {
+      status.textContent = "❌ No cameras found";
+      return;
+    }
+
+    const backIndex = getBackCameraIndex(cameras);
+    currentCameraIndex = backIndex !== -1 ? backIndex : 0;
+
+    await scanner.start(
+      { deviceId: { exact: cameras[currentCameraIndex].id } },
+      { fps: 12, qrbox: { width: 350, height: 350 } },
+      handleScan
+    );
+
+    cameraActive = true;
+    cameraBtn.classList.add("active");
+    overlay.style.display = "none";
+    flashBtn.style.display = "flex";
+    status.textContent = "📷 Scanning...";
+  } catch (err) {
+    console.error(err);
+    status.textContent = "❌ Camera error";
   }
 };
 
@@ -150,39 +139,17 @@ flipBtn.onclick = async () => {
     return;
   }
 
-  try {
-    await scanner.stop();
-    await scanner.clear();
-    flashOn = false;
-    flashBtn.classList.remove("active");
-
-    currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
-
-    await scanner.start(
-      { deviceId: { exact: cameras[currentCameraIndex].id } },
-      { fps: 15, qrbox: { width: 400, height: 400 }, aspectRatio: 1 },
-      handleScan
-    );
-
-    scanDoneSinceCameraStart = false; // reset after flip
-    status.textContent = "📷 Camera switched";
-  } catch (err) {
-    console.error(err);
-    status.textContent = "❌ Flip failed";
-  }
+  await stopCamera();
+  currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+  cameraBtn.onclick(); // restart camera
 };
 
-/* ================= FLASH (TORCH) ================= */
+/* ================= FLASH ================= */
 flashBtn.onclick = async () => {
-  if (!scanner || !cameraActive) return;
+  if (!cameraActive) return;
 
   try {
     const track = scanner.getRunningTrack();
-    if (!track) {
-      status.textContent = "❌ No active camera track";
-      return;
-    }
-
     const caps = track.getCapabilities();
     if (!caps.torch) {
       status.textContent = "❌ Flash not supported";
@@ -194,8 +161,7 @@ flashBtn.onclick = async () => {
 
     flashBtn.classList.toggle("active", flashOn);
     status.textContent = flashOn ? "🔦 Flash on" : "🔦 Flash off";
-  } catch (err) {
-    console.error(err);
+  } catch {
     status.textContent = "❌ Flash error";
   }
 };
@@ -204,10 +170,7 @@ flashBtn.onclick = async () => {
 uploadBtn.onclick = async () => {
   if (!TOKEN) return;
 
-  if (scanDoneSinceCameraStart) {
-    status.textContent = "⚠️ Restart camera to scan next item";
-    return;
-  }
+  await stopCamera(); // 🔥 ensure camera is fully stopped
 
   const input = document.createElement("input");
   input.type = "file";
@@ -219,13 +182,12 @@ uploadBtn.onclick = async () => {
     if (!file) return;
 
     try {
-      scanner ??= new Html5Qrcode("reader");
       const qr = await scanner.scanFile(file, true);
       await handleScan(qr);
     } catch {
       status.textContent = "❌ No QR found in image";
     } finally {
-      // Remove the image reference to avoid infinite reuse
+      await scanner.clear(); // 🔥 remove image preview
       input.value = "";
     }
   };
