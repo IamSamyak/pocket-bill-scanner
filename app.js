@@ -29,11 +29,13 @@ const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
 /* ================= STATE ================= */
-let scanner = new Html5Qrcode("reader");
+const scanner = new Html5Qrcode("reader");
+
 let cameraActive = false;
 let cameras = [];
 let currentCameraIndex = 0;
 let flashOn = false;
+let scanLocked = false; // 🔒 HARD LOCK
 
 /* ================= TOKEN ================= */
 const TOKEN =
@@ -48,9 +50,9 @@ if (!TOKEN) {
 }
 
 /* ================= HELPERS ================= */
-function getBackCameraIndex(cameras) {
+function getBackCameraIndex(list) {
   const keywords = ["back", "rear", "environment"];
-  return cameras.findIndex(cam =>
+  return list.findIndex(cam =>
     keywords.some(k => cam.label.toLowerCase().includes(k))
   );
 }
@@ -60,8 +62,8 @@ async function stopCamera() {
 
   try {
     await scanner.stop();
-    await scanner.clear(); // 🔥 removes video / image UI
-  } catch (e) {}
+    await scanner.clear(); // 🔥 removes camera / image UI
+  } catch {}
 
   cameraActive = false;
   flashOn = false;
@@ -74,6 +76,9 @@ async function stopCamera() {
 
 /* ================= SCAN HANDLER ================= */
 async function handleScan(qr) {
+  if (scanLocked) return;   // 🔥 BLOCK duplicates
+  scanLocked = true;
+
   if (!TOKEN) return;
 
   try {
@@ -91,7 +96,7 @@ async function handleScan(qr) {
     status.textContent = "❌ Scan failed";
   }
 
-  // 🔥 AUTO CLOSE CAMERA AFTER ONE SCAN
+  // 🔥 FORCE CAMERA CLOSE AFTER ONE SCAN
   await stopCamera();
 }
 
@@ -114,6 +119,8 @@ cameraBtn.onclick = async () => {
 
     const backIndex = getBackCameraIndex(cameras);
     currentCameraIndex = backIndex !== -1 ? backIndex : 0;
+
+    scanLocked = false; // 🔓 RESET LOCK ON START
 
     await scanner.start(
       { deviceId: { exact: cameras[currentCameraIndex].id } },
@@ -141,7 +148,7 @@ flipBtn.onclick = async () => {
 
   await stopCamera();
   currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
-  cameraBtn.onclick(); // restart camera
+  cameraBtn.onclick(); // restart camera cleanly
 };
 
 /* ================= FLASH ================= */
@@ -170,7 +177,8 @@ flashBtn.onclick = async () => {
 uploadBtn.onclick = async () => {
   if (!TOKEN) return;
 
-  await stopCamera(); // 🔥 ensure camera is fully stopped
+  await stopCamera(); // 🔥 ensure camera is fully closed
+  scanLocked = false; // allow image scan once
 
   const input = document.createElement("input");
   input.type = "file";
