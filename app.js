@@ -2,7 +2,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebas
 import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
 /* ================= FIREBASE ================= */
-
 const firebaseConfig = {
   apiKey: "AIzaSyBBPZOSFp4Xg5ASC4jd_zEbeVulDRp4Xsk",
   authDomain: "testing-pocket-bill.firebaseapp.com",
@@ -17,7 +16,6 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 /* ================= DOM ================= */
-
 const overlay = document.getElementById("overlay");
 const status = document.getElementById("status");
 const cameraBtn = document.getElementById("cameraBtn");
@@ -27,12 +25,10 @@ const printBtn = document.getElementById("printBtn");
 const flashBtn = document.getElementById("flashBtn");
 
 /* ================= SOUND ================= */
-
 const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
 /* ================= STATE ================= */
-
 let scanner = null;
 let cameraActive = false;
 let cameras = [];
@@ -41,10 +37,11 @@ let flashOn = false;
 
 let lastScanTime = 0;
 let scanInProgress = false;
-const SCAN_DELAY = 1000;
+const SCAN_DELAY = 1000; // 1 second
+
+let scanDoneSinceCameraStart = false; // prevent multiple scans per camera session
 
 /* ================= TOKEN ================= */
-
 const TOKEN =
   new URLSearchParams(location.search).get("token") ||
   localStorage.getItem("instant_token");
@@ -57,7 +54,6 @@ if (!TOKEN) {
 }
 
 /* ================= HELPERS ================= */
-
 function getBackCameraIndex(cameras) {
   const keywords = ["back", "rear", "environment"];
   return cameras.findIndex(cam =>
@@ -66,11 +62,16 @@ function getBackCameraIndex(cameras) {
 }
 
 /* ================= SCAN HANDLER ================= */
-
 async function handleScan(qr) {
   if (!TOKEN) return;
 
   const now = Date.now();
+
+  if (scanDoneSinceCameraStart) {
+    status.textContent = "⚠️ Restart camera to scan next item";
+    return;
+  }
+
   if (scanInProgress || now - lastScanTime < SCAN_DELAY) return;
 
   scanInProgress = true;
@@ -86,6 +87,7 @@ async function handleScan(qr) {
     beepSound.currentTime = 0;
     beepSound.play().catch(() => {});
     status.textContent = "✅ QR scanned successfully!";
+    scanDoneSinceCameraStart = true; // mark scan done
   } catch (err) {
     console.error(err);
     status.textContent = "❌ Scan failed";
@@ -95,7 +97,6 @@ async function handleScan(qr) {
 }
 
 /* ================= CAMERA START / STOP ================= */
-
 cameraBtn.onclick = async () => {
   if (!TOKEN) return;
 
@@ -119,6 +120,7 @@ cameraBtn.onclick = async () => {
       );
 
       cameraActive = true;
+      scanDoneSinceCameraStart = false; // reset
       cameraBtn.classList.add("active");
       overlay.style.display = "none";
       flashBtn.style.display = "flex";
@@ -132,18 +134,16 @@ cameraBtn.onclick = async () => {
     await scanner.clear();
     cameraActive = false;
     flashOn = false;
-
+    scanDoneSinceCameraStart = false; // reset
     cameraBtn.classList.remove("active");
     flashBtn.classList.remove("active");
     flashBtn.style.display = "none";
     overlay.style.display = "flex";
-
     status.textContent = "📷 Camera stopped";
   }
 };
 
 /* ================= CAMERA FLIP ================= */
-
 flipBtn.onclick = async () => {
   if (!cameraActive || cameras.length < 2) {
     status.textContent = "❌ Cannot flip camera";
@@ -164,6 +164,7 @@ flipBtn.onclick = async () => {
       handleScan
     );
 
+    scanDoneSinceCameraStart = false; // reset after flip
     status.textContent = "📷 Camera switched";
   } catch (err) {
     console.error(err);
@@ -172,24 +173,24 @@ flipBtn.onclick = async () => {
 };
 
 /* ================= FLASH (TORCH) ================= */
-
 flashBtn.onclick = async () => {
   if (!scanner || !cameraActive) return;
 
   try {
     const track = scanner.getRunningTrack();
-    const caps = track.getCapabilities();
+    if (!track) {
+      status.textContent = "❌ No active camera track";
+      return;
+    }
 
+    const caps = track.getCapabilities();
     if (!caps.torch) {
       status.textContent = "❌ Flash not supported";
       return;
     }
 
     flashOn = !flashOn;
-
-    await track.applyConstraints({
-      advanced: [{ torch: flashOn }]
-    });
+    await track.applyConstraints({ advanced: [{ torch: flashOn }] });
 
     flashBtn.classList.toggle("active", flashOn);
     status.textContent = flashOn ? "🔦 Flash on" : "🔦 Flash off";
@@ -200,9 +201,13 @@ flashBtn.onclick = async () => {
 };
 
 /* ================= IMAGE UPLOAD ================= */
-
 uploadBtn.onclick = async () => {
   if (!TOKEN) return;
+
+  if (scanDoneSinceCameraStart) {
+    status.textContent = "⚠️ Restart camera to scan next item";
+    return;
+  }
 
   const input = document.createElement("input");
   input.type = "file";
@@ -210,18 +215,23 @@ uploadBtn.onclick = async () => {
   input.click();
 
   input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+
     try {
       scanner ??= new Html5Qrcode("reader");
-      const qr = await scanner.scanFile(input.files[0], true);
+      const qr = await scanner.scanFile(file, true);
       await handleScan(qr);
     } catch {
       status.textContent = "❌ No QR found in image";
+    } finally {
+      // Remove the image reference to avoid infinite reuse
+      input.value = "";
     }
   };
 };
 
 /* ================= PRINT ================= */
-
 printBtn.onclick = async () => {
   if (!TOKEN) return;
 
