@@ -40,10 +40,22 @@ statusBanner.className = "status-banner";
 statusBanner.textContent = "Initializing...";
 scannerFrame.appendChild(statusBanner);
 
+let statusTimeout; // Keep track of any existing timeout
+
 function updateStatus(text, type = "") {
   statusBanner.textContent = text;
   statusBanner.className = "status-banner " + type;
+  statusBanner.style.opacity = "1"; // make sure it's visible
+
+  // Clear any previous timeout
+  if (statusTimeout) clearTimeout(statusTimeout);
+
+  // Hide the status after 2 seconds
+  statusTimeout = setTimeout(() => {
+    statusBanner.style.opacity = "0"; // fade out
+  }, 2000);
 }
+
 
 // REFRESH BUTTON
 refreshBtn.onclick = () => {
@@ -103,6 +115,7 @@ async function checkServerListeningStatus() {
     const data = snap.val();
     if (!data.respondedAt || data.respondedAt < requestTime) return;
 
+    console.log("dats is " + data);
     responded = true;
     off(responseRef);
     clearTimeout(timeoutId);
@@ -120,7 +133,7 @@ async function checkServerListeningStatus() {
 
     off(responseRef);
     updateStatus("❌ Machine is OFFLINE", "error");
-  }, 3000); // 3 seconds is perfect
+  }, 5000); // 3 seconds is perfect
 }
 
 /* ================= INIT ================= */
@@ -142,7 +155,7 @@ async function stopCamera() {
   try {
     await scanner.stop();
     await scanner.clear();
-  } catch {}
+  } catch { }
 
   cameraActive = false;
   flashOn = false;
@@ -164,7 +177,7 @@ async function handleScan(qr) {
   });
 
   beepSound.currentTime = 0;
-  beepSound.play().catch(() => {});
+  beepSound.play().catch(() => { });
   updateStatus("✅ QR scanned successfully!", "success");
   await stopCamera();
 }
