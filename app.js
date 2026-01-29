@@ -5,7 +5,8 @@ import {
   push,
   get,
   onValue,
-  set
+  set,
+  off
 } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
 /* ================= FIREBASE ================= */
@@ -31,6 +32,7 @@ const uploadBtn = document.getElementById("uploadBtn");
 const flipBtn = document.getElementById("flipBtn");
 const printBtn = document.getElementById("printBtn");
 const flashBtn = document.getElementById("flashBtn");
+const refreshBtn = document.getElementById("refreshBtn");
 
 /* ================= STATUS BANNER ================= */
 const statusBanner = document.createElement("div");
@@ -43,13 +45,18 @@ function updateStatus(text, type = "") {
   statusBanner.className = "status-banner " + type;
 }
 
+// REFRESH BUTTON
+refreshBtn.onclick = () => {
+  location.reload();
+};
+
+
 /* ================= SOUND ================= */
 const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
 /* ================= SCANNER STATE ================= */
 const scanner = new Html5Qrcode("reader");
-
 let cameraActive = false;
 let cameras = [];
 let currentCameraIndex = 0;
@@ -70,47 +77,55 @@ if (!TOKEN) {
 
 /* ================= CLIENT TOKEN WRITE ================= */
 async function writeClientToken(token) {
-  try {
-    await set(ref(db, "client_token"), {
-      token,
-      lastUpdated: Date.now()
-    });
-    console.log("✅ Client token written");
-  } catch (err) {
-    console.error("❌ Failed to write client token:", err);
-  }
+  await set(ref(db, "client_token"), {
+    token,
+    lastUpdated: Date.now()
+  });
 }
 
 /* ================= SERVER LISTENING HANDSHAKE ================= */
 async function checkServerListeningStatus() {
   const requestRef = ref(db, "server_status/serverListeningRequest");
-  const responseRef = ref(db, "server_status/serverListeningResponse/isListening");
+  const responseRef = ref(db, "server_status/serverListeningResponse");
 
-  try {
-    // Ask server if it is listening
-    await set(requestRef, { askedAt: Date.now() });
+  updateStatus("🔄 Checking machine status...");
 
-    // Listen for server response (real-time)
-    onValue(responseRef, (snap) => {
-      const isListening = snap.exists() ? snap.val() : false;
+  const requestTime = Date.now();
+  let responded = false;
 
-      if (isListening) {
-        updateStatus("✅ Machine is listening", "success");
-      } else {
-        updateStatus("❌ Machine is not listening", "error");
-      }
-    });
-  } catch (err) {
-    console.error("❌ Server status check failed:", err);
-    updateStatus("❌ Unable to reach machine", "error");
-  }
+  // 1️⃣ Send request
+  await set(requestRef, { askedAt: requestTime });
+
+  // 2️⃣ Listen for fresh response only
+  const unsubscribe = onValue(responseRef, (snap) => {
+    if (!snap.exists()) return;
+
+    const data = snap.val();
+    if (!data.respondedAt || data.respondedAt < requestTime) return;
+
+    responded = true;
+    off(responseRef);
+    clearTimeout(timeoutId);
+
+    if (data.isListening) {
+      updateStatus("✅ Machine is listening", "success");
+    } else {
+      updateStatus("⚠️ Machine is ON but not listening", "warning");
+    }
+  });
+
+  // 3️⃣ Timeout → OFFLINE
+  const timeoutId = setTimeout(() => {
+    if (responded) return;
+
+    off(responseRef);
+    updateStatus("❌ Machine is OFFLINE", "error");
+  }, 3000); // 3 seconds is perfect
 }
 
 /* ================= INIT ================= */
 if (TOKEN) {
-  writeClientToken(TOKEN).then(() => {
-    checkServerListeningStatus();
-  });
+  writeClientToken(TOKEN).then(checkServerListeningStatus);
 }
 
 /* ================= HELPERS ================= */
@@ -131,7 +146,6 @@ async function stopCamera() {
 
   cameraActive = false;
   flashOn = false;
-
   cameraBtn.classList.remove("active");
   flashBtn.classList.remove("active");
   flashBtn.style.display = "none";
@@ -140,26 +154,18 @@ async function stopCamera() {
 
 /* ================= SCAN HANDLER ================= */
 async function handleScan(qr) {
-  if (scanLocked) return;
+  if (scanLocked || !TOKEN) return;
   scanLocked = true;
 
-  if (!TOKEN) return;
+  await push(ref(db, "instant_scans"), {
+    qr,
+    token: TOKEN,
+    createdAt: Date.now()
+  });
 
-  try {
-    await push(ref(db, "instant_scans"), {
-      qr,
-      token: TOKEN,
-      createdAt: Date.now()
-    });
-
-    beepSound.currentTime = 0;
-    beepSound.play().catch(() => {});
-    updateStatus("✅ QR scanned successfully!", "success");
-  } catch (err) {
-    console.error(err);
-    updateStatus("❌ Scan failed", "error");
-  }
-
+  beepSound.currentTime = 0;
+  beepSound.play().catch(() => {});
+  updateStatus("✅ QR scanned successfully!", "success");
   await stopCamera();
 }
 
@@ -173,32 +179,26 @@ cameraBtn.onclick = async () => {
     return;
   }
 
-  try {
-    cameras = await Html5Qrcode.getCameras();
-    if (!cameras.length) {
-      updateStatus("❌ No cameras found", "error");
-      return;
-    }
-
-    const backIndex = getBackCameraIndex(cameras);
-    currentCameraIndex = backIndex !== -1 ? backIndex : 0;
-    scanLocked = false;
-
-    await scanner.start(
-      { deviceId: { exact: cameras[currentCameraIndex].id } },
-      { fps: 12, qrbox: { width: 350, height: 350 } },
-      handleScan
-    );
-
-    cameraActive = true;
-    cameraBtn.classList.add("active");
-    overlay.style.display = "none";
-    flashBtn.style.display = "flex";
-    updateStatus("📷 Scanning...");
-  } catch (err) {
-    console.error(err);
-    updateStatus("❌ Camera error", "error");
+  cameras = await Html5Qrcode.getCameras();
+  if (!cameras.length) {
+    updateStatus("❌ No cameras found", "error");
+    return;
   }
+
+  currentCameraIndex = getBackCameraIndex(cameras) || 0;
+  scanLocked = false;
+
+  await scanner.start(
+    { deviceId: { exact: cameras[currentCameraIndex].id } },
+    { fps: 12, qrbox: { width: 350, height: 350 } },
+    handleScan
+  );
+
+  cameraActive = true;
+  cameraBtn.classList.add("active");
+  overlay.style.display = "none";
+  flashBtn.style.display = "flex";
+  updateStatus("📷 Scanning...");
 };
 
 /* ================= CAMERA FLIP ================= */
@@ -217,23 +217,17 @@ flipBtn.onclick = async () => {
 flashBtn.onclick = async () => {
   if (!cameraActive) return;
 
-  try {
-    const track = scanner.getRunningTrack();
-    const caps = track.getCapabilities();
-
-    if (!caps.torch) {
-      updateStatus("❌ Flash not supported", "warning");
-      return;
-    }
-
-    flashOn = !flashOn;
-    await track.applyConstraints({ advanced: [{ torch: flashOn }] });
-
-    flashBtn.classList.toggle("active", flashOn);
-    updateStatus(flashOn ? "🔦 Flash on" : "🔦 Flash off");
-  } catch {
-    updateStatus("❌ Flash error", "error");
+  const track = scanner.getRunningTrack();
+  const caps = track.getCapabilities();
+  if (!caps.torch) {
+    updateStatus("❌ Flash not supported", "warning");
+    return;
   }
+
+  flashOn = !flashOn;
+  await track.applyConstraints({ advanced: [{ torch: flashOn }] });
+  flashBtn.classList.toggle("active", flashOn);
+  updateStatus(flashOn ? "🔦 Flash on" : "🔦 Flash off");
 };
 
 /* ================= IMAGE UPLOAD ================= */
@@ -249,11 +243,8 @@ uploadBtn.onclick = async () => {
   input.click();
 
   input.onchange = async () => {
-    const file = input.files[0];
-    if (!file) return;
-
     try {
-      const qr = await scanner.scanFile(file, true);
+      const qr = await scanner.scanFile(input.files[0], true);
       await handleScan(qr);
     } catch {
       updateStatus("❌ No QR found in image", "error");
@@ -268,15 +259,11 @@ uploadBtn.onclick = async () => {
 printBtn.onclick = async () => {
   if (!TOKEN) return;
 
-  try {
-    await push(ref(db, "instant_commands"), {
-      type: "print",
-      token: TOKEN,
-      createdAt: Date.now()
-    });
+  await push(ref(db, "instant_commands"), {
+    type: "print",
+    token: TOKEN,
+    createdAt: Date.now()
+  });
 
-    updateStatus("✅ Print sent", "success");
-  } catch {
-    updateStatus("❌ Print failed", "error");
-  }
+  updateStatus("✅ Print sent", "success");
 };
