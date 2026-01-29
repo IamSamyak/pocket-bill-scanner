@@ -1,11 +1,19 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-import { getDatabase, ref, push, get, onValue, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+import {
+  getDatabase,
+  ref,
+  push,
+  get,
+  onValue,
+  set
+} from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
 
 /* ================= FIREBASE ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyBBPZOSFp4Xg5ASC4jd_zEbeVulDRp4Xsk",
   authDomain: "testing-pocket-bill.firebaseapp.com",
-  databaseURL: "https://testing-pocket-bill-default-rtdb.asia-southeast1.firebasedatabase.app",
+  databaseURL:
+    "https://testing-pocket-bill-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "testing-pocket-bill",
   storageBucket: "testing-pocket-bill.firebasestorage.app",
   messagingSenderId: "72049299092",
@@ -25,7 +33,7 @@ const printBtn = document.getElementById("printBtn");
 const flashBtn = document.getElementById("flashBtn");
 
 /* ================= STATUS BANNER ================= */
-let statusBanner = document.createElement("div");
+const statusBanner = document.createElement("div");
 statusBanner.className = "status-banner";
 statusBanner.textContent = "Initializing...";
 scannerFrame.appendChild(statusBanner);
@@ -39,7 +47,7 @@ function updateStatus(text, type = "") {
 const beepSound = new Audio("scanner-beep.mp3");
 beepSound.preload = "auto";
 
-/* ================= STATE ================= */
+/* ================= SCANNER STATE ================= */
 const scanner = new Html5Qrcode("reader");
 
 let cameraActive = false;
@@ -64,57 +72,52 @@ if (!TOKEN) {
 async function writeClientToken(token) {
   try {
     await set(ref(db, "client_token"), {
-      token: token,
+      token,
       lastUpdated: Date.now()
     });
-    console.log("✅ Client token written to DB");
+    console.log("✅ Client token written");
   } catch (err) {
     console.error("❌ Failed to write client token:", err);
   }
 }
 
-/* ================= MACHINE STATUS ================= */
-async function checkServerStatus() {
+/* ================= SERVER LISTENING HANDSHAKE ================= */
+async function checkServerListeningStatus() {
+  const requestRef = ref(db, "server_status/serverListeningRequest");
+  const responseRef = ref(db, "server_status/serverListeningResponse/isListening");
+
   try {
-    const statusRef = ref(db, "server_status/isMatchingListening/value");
+    // Ask server if it is listening
+    await set(requestRef, { askedAt: Date.now() });
 
-    // Check once on startup
-    const snapshot = await get(statusRef);
-    let isListening = snapshot.exists() ? snapshot.val() : false;
+    // Listen for server response (real-time)
+    onValue(responseRef, (snap) => {
+      const isListening = snap.exists() ? snap.val() : false;
 
-    if (!isListening) {
-      updateStatus("❌ Machine is not listening!", "error");
-    } else {
-      updateStatus("✅ Machine is listening", "success");
-    }
-
-    // Listen to real-time updates
-    onValue(statusRef, (snap) => {
-      isListening = snap.exists() ? snap.val() : false;
-      if (!isListening) {
-        updateStatus("❌ Machine is not listening!", "error");
-      } else {
+      if (isListening) {
         updateStatus("✅ Machine is listening", "success");
+      } else {
+        updateStatus("❌ Machine is not listening", "error");
       }
     });
   } catch (err) {
-    console.error("Failed to get server status:", err);
-    updateStatus("❌ Unable to read machine status", "error");
+    console.error("❌ Server status check failed:", err);
+    updateStatus("❌ Unable to reach machine", "error");
   }
 }
 
-/* ================= INIT: WRITE TOKEN THEN CHECK STATUS ================= */
+/* ================= INIT ================= */
 if (TOKEN) {
   writeClientToken(TOKEN).then(() => {
-    checkServerStatus();
+    checkServerListeningStatus();
   });
 }
 
 /* ================= HELPERS ================= */
 function getBackCameraIndex(list) {
   const keywords = ["back", "rear", "environment"];
-  return list.findIndex(cam =>
-    keywords.some(k => cam.label.toLowerCase().includes(k))
+  return list.findIndex((cam) =>
+    keywords.some((k) => cam.label.toLowerCase().includes(k))
   );
 }
 
@@ -217,6 +220,7 @@ flashBtn.onclick = async () => {
   try {
     const track = scanner.getRunningTrack();
     const caps = track.getCapabilities();
+
     if (!caps.torch) {
       updateStatus("❌ Flash not supported", "warning");
       return;
